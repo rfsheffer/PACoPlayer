@@ -181,9 +181,6 @@ public partial class MainWindowViewModel : ObservableObject
         OpPalette opPalette = (OpPalette)chunk.OpCodes[0];
         OpBitmap opBitmap = (OpBitmap)chunk.OpCodes[1];
 
-        RLEBitmap bitmapOut = new RLEBitmap(opBitmap.Size.Width, opBitmap.Size.Height, opBitmap.BitmapData.ToArray(), opPalette.SolidColor);
-        bitmapOut.Save("D:\\Projects\\Bitmaps\\frame.bmp");
-
 #pragma warning disable CA1031 // Do not catch general exception types
         try
         {
@@ -196,7 +193,10 @@ public partial class MainWindowViewModel : ObservableObject
         {
 
         }
-#pragma warning restore CA1031 // Do not catch general exception types
+#pragma warning restore CA1031
+
+        RLEBitmap bitmapOut = new RLEBitmap(opBitmap.Size.Width, opBitmap.Size.Height, opBitmap.BitmapData.ToArray(), opPalette.SolidColor);
+        bitmapOut.Save("D:\\Projects\\Bitmaps\\frame.bmp"); // Do not catch general exception types
     }
 
     [RelayCommand]
