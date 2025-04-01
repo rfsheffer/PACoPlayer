@@ -63,17 +63,24 @@ namespace PACoPlayer.Decoder.DataTypes
         private readonly int _height;
         private readonly Color _solidColor;
         private readonly byte[] _imageBytes;
+        private readonly RawColorBytes[] _palette;
 
-        public RLEBitmap(int width, int height, byte[] bytes, Color solidColor)
+        public RLEBitmap(int width, int height, byte[] bytes, Color solidColor, RawColorBytes[] palette)
         {
             _width = width;
             _height = height;
             _imageBytes = new byte[width * height * 4];
             _solidColor = solidColor;
+            _palette = palette;
 
             if (bytes.Length > 0)
             {
                 DecodeRLE(bytes);
+            }
+
+            if(palette.Length != 256)
+            {
+                throw new RLEException("Invalid palette!");
             }
         }
 
@@ -362,12 +369,23 @@ namespace PACoPlayer.Decoder.DataTypes
 
             if(!endOfBitmap)
             {
-                throw new RLEException($"Did not receive end of bitmap flag!");
+                throw new RLEException("Did not receive end of bitmap flag!");
             }
 
-            for(int decodedIndex = 0; decodedIndex < bytesDecoded.Count && decodedIndex < _imageBytes.Length / 4; decodedIndex++)
+            // TODO: error on incorrect decoded to pixel count, not just less than.
+            if(bytesDecoded.Count < _width * _height)
             {
-                RawColorBytes color = ColorPalettes256.VGA[bytesDecoded[decodedIndex]];
+                throw new RLEException("Invalid number of decoded bytes!");
+            }
+
+            int totalPixels = _width * _height;
+            for (int decodedIndex = 0; decodedIndex < totalPixels; decodedIndex++)
+            {
+                int x = decodedIndex % _width;
+                int y = _height - (decodedIndex / _width) - 1; // The output bytesDecoded is flipped vertically
+
+                RawColorBytes color = _palette[bytesDecoded[x + (y * _width)]];
+
                 int byteOffset = decodedIndex * 4;
                 _imageBytes[byteOffset + 0] = color.B;
                 _imageBytes[byteOffset + 1] = color.G;
