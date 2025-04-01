@@ -28,7 +28,7 @@ public record OpPalette : OpHeader
         StringBuilder sb = new();
 
         _ = sb.AppendLine(base.ToString())
-            .AppendLine($"- Transition type: {Type}, when: {TransitionWhen}, duration: {Time}")
+            .AppendLine($"- Palette type: {Type}, when: {TransitionWhen}, duration: {Time}")
             .AppendLine($"- Solid fill: {SolidColor}")
             .AppendLine($"- Color table: {ColorTable}");
 

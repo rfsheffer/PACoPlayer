@@ -36,7 +36,7 @@ public record OpTransition : OpHeader
         StringBuilder sb = new();
 
         _ = sb.AppendLine(base.ToString())
-            .AppendLine($"- Type: {Type}")
+            .AppendLine($"- Transition Type: {Type}")
             .AppendLine($"- Duration: {Duration.Milliseconds}ms")
             .AppendLine($"ChunkSize: {ChunkSize}, PartSize: {PartSize}");
 

@@ -3,7 +3,6 @@
 
 using PACoPlayer.Decoder.Records;
 
-
 namespace PACoPlayer.Decoder.DataTypes
 {
     public struct RawColorBytes : IEquatable<RawColorBytes>
@@ -124,7 +123,8 @@ namespace PACoPlayer.Decoder.DataTypes
             List<byte> lastTableBytes = new List<byte>();
 
             int byteIndex;
-            for (byteIndex = 0; byteIndex < bytes.Length; byteIndex++)
+            bool endOfBitmap = false;
+            for (byteIndex = 0; byteIndex < bytes.Length && !endOfBitmap; byteIndex++)
             {
                 sbyte b = (sbyte)bytes[byteIndex]; // descriptor byte
                 if (b > 0)
@@ -266,7 +266,8 @@ namespace PACoPlayer.Decoder.DataTypes
                             }
                         case 15:
                             // end of bitmap, stop here!
-                            return;
+                            endOfBitmap = true;
+                            break;
                         default:
                             throw new RLEException($"Invalid escape code {code}!");
                     }
@@ -358,6 +359,20 @@ namespace PACoPlayer.Decoder.DataTypes
                     }
                 }
             }
+
+            if(!endOfBitmap)
+            {
+                throw new RLEException($"Did not receive end of bitmap flag!");
+            }
+
+            for(int decodedIndex = 0; decodedIndex < bytesDecoded.Count && decodedIndex < _imageBytes.Length / 4; decodedIndex++)
+            {
+                RawColorBytes color = ColorPalettes256.VGA[bytesDecoded[decodedIndex]];
+                int byteOffset = decodedIndex * 4;
+                _imageBytes[byteOffset + 0] = color.B;
+                _imageBytes[byteOffset + 1] = color.G;
+                _imageBytes[byteOffset + 2] = color.R;
+            }
         }
 
         public void Save(string filename)
@@ -367,10 +382,10 @@ namespace PACoPlayer.Decoder.DataTypes
         }
     }
 
-    public record WinColors
+    public record ColorPalettes256
     {
-        // Palette from https://lospec.com/palette-list/windows-95-256-colours
-        public static readonly RawColorBytes[] Palette256 =
+        // From https://lospec.com/palette-list/windows-95-256-colours
+        public static readonly RawColorBytes[] Win95 =
         {
             new(0x000000),
             new(0x800000),
@@ -628,6 +643,43 @@ namespace PACoPlayer.Decoder.DataTypes
             new(0xff00ff),
             new(0x00ffff),
             new(0xffffff)
+        };
+
+        // From https://gist.github.com/cesarmiquel/1780ab6078b9735371d1f10a9d60d233
+        public static readonly RawColorBytes[] VGA =
+        {
+            new(0x000000), new(0x0002aa), new(0x14aa00), new(0x00aaaa), new(0xaa0003), new(0xaa00aa), new(0xaa5500), new(0xaaaaaa),
+            new(0x555555), new(0x5555ff), new(0x55ff55), new(0x55ffff), new(0xff5555), new(0xfd55ff), new(0xffff55), new(0xffffff),
+            new(0x000000), new(0x101010), new(0x202020), new(0x353535), new(0x454545), new(0x555555), new(0x656565), new(0x757575),
+            new(0x8a8a8a), new(0x9a9a9a), new(0xaaaaaa), new(0xbababa), new(0xcacaca), new(0xdfdfdf), new(0xefefef), new(0xffffff),
+            new(0x0004ff), new(0x4104ff), new(0x8203ff), new(0xbe02ff), new(0xfd00ff), new(0xfe00be), new(0xff0082), new(0xff0041),
+            new(0xff0008), new(0xff4105), new(0xff8200), new(0xffbe00), new(0xffff00), new(0xbeff00), new(0x82ff00), new(0x41ff01),
+            new(0x24ff00), new(0x22ff42), new(0x1dff82), new(0x12ffbe), new(0x00ffff), new(0x00beff), new(0x0182ff), new(0x0041ff),
+            new(0x8282ff), new(0x9e82ff), new(0xbe82ff), new(0xdf82ff), new(0xfd82ff), new(0xfe82df), new(0xff82be), new(0xff829e),
+            new(0xff8282), new(0xff9e82), new(0xffbe82), new(0xffdf82), new(0xffff82), new(0xdfff82), new(0xbeff82), new(0x9eff82),
+            new(0x82ff82), new(0x82ff9e), new(0x82ffbe), new(0x82ffdf), new(0x82ffff), new(0x82dfff), new(0x82beff), new(0x829eff),
+            new(0xbabaff), new(0xcabaff), new(0xdfbaff), new(0xefbaff), new(0xfebaff), new(0xfebaef), new(0xffbadf), new(0xffbaca),
+            new(0xffbaba), new(0xffcaba), new(0xffdfba), new(0xffefba), new(0xffffba), new(0xefffba), new(0xdfffba), new(0xcaffbb),
+            new(0xbaffba), new(0xbaffca), new(0xbaffdf), new(0xbaffef), new(0xbaffff), new(0xbaefff), new(0xbadfff), new(0xbacaff),
+            new(0x010171), new(0x1c0171), new(0x390171), new(0x550071), new(0x710071), new(0x710055), new(0x710039), new(0x71001c),
+            new(0x710001), new(0x711c01), new(0x713900), new(0x715500), new(0x717100), new(0x557100), new(0x397100), new(0x1c7100),
+            new(0x097100), new(0x09711c), new(0x067139), new(0x037155), new(0x007171), new(0x005571), new(0x003971), new(0x001c71),
+            new(0x393971), new(0x453971), new(0x553971), new(0x613971), new(0x713971), new(0x713961), new(0x713955), new(0x713945),
+            new(0x713939), new(0x714539), new(0x715539), new(0x716139), new(0x717139), new(0x617139), new(0x557139), new(0x45713a),
+            new(0x397139), new(0x397145), new(0x397155), new(0x397161), new(0x397171), new(0x396171), new(0x395571), new(0x394572),
+            new(0x515171), new(0x595171), new(0x615171), new(0x695171), new(0x715171), new(0x715169), new(0x715161), new(0x715159),
+            new(0x715151), new(0x715951), new(0x716151), new(0x716951), new(0x717151), new(0x697151), new(0x617151), new(0x597151),
+            new(0x517151), new(0x51715a), new(0x517161), new(0x517169), new(0x517171), new(0x516971), new(0x516171), new(0x515971),
+            new(0x000042), new(0x110041), new(0x200041), new(0x310041), new(0x410041), new(0x410032), new(0x410020), new(0x410010),
+            new(0x410000), new(0x411000), new(0x412000), new(0x413100), new(0x414100), new(0x314100), new(0x204100), new(0x104100),
+            new(0x034100), new(0x034110), new(0x024120), new(0x014131), new(0x004141), new(0x003141), new(0x002041), new(0x001041),
+            new(0x202041), new(0x282041), new(0x312041), new(0x392041), new(0x412041), new(0x412039), new(0x412031), new(0x412028),
+            new(0x412020), new(0x412820), new(0x413120), new(0x413921), new(0x414120), new(0x394120), new(0x314120), new(0x284120),
+            new(0x204120), new(0x204128), new(0x204131), new(0x204139), new(0x204141), new(0x203941), new(0x203141), new(0x202841),
+            new(0x2d2d41), new(0x312d41), new(0x352d41), new(0x3d2d41), new(0x412d41), new(0x412d3d), new(0x412d35), new(0x412d31),
+            new(0x412d2d), new(0x41312d), new(0x41352d), new(0x413d2d), new(0x41412d), new(0x3d412d), new(0x35412d), new(0x31412d),
+            new(0x2d412d), new(0x2d4131), new(0x2d4135), new(0x2d413d), new(0x2d4141), new(0x2d3d41), new(0x2d3541), new(0x2d3141),
+            new(0x000000), new(0x000000), new(0x000000), new(0x000000), new(0x000000), new(0x000000), new(0x000000), new(0x000000)
         };
     }
 }
