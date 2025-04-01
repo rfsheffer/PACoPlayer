@@ -2,16 +2,19 @@
 // This file is licensed for use under the MIT license.
 
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using Avalonia.Media.Imaging;
 using BinForge;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using PACoPlayer.Decoder;
+using PACoPlayer.Decoder.DataTypes;
 using PACoPlayer.Decoder.Records;
 
 namespace PACoPlayer.AvaloniaUI;
@@ -166,6 +169,34 @@ public partial class MainWindowViewModel : ObservableObject
         }
 
         return pacoFile;
+    }
+
+    [RelayCommand]
+    private void Export()
+    {
+        if (_openedFile == null) { return; }
+        if(_openedFile.ChunkData.Count <= 0) { return; }
+
+        Chunk chunk = _openedFile.ChunkData[0];
+        OpPalette opPalette = (OpPalette)chunk.OpCodes[0];
+        OpBitmap opBitmap = (OpBitmap)chunk.OpCodes[1];
+
+        RLEBitmap bitmapOut = new RLEBitmap(opBitmap.Size.Width, opBitmap.Size.Height, opBitmap.BitmapData.ToArray(), opPalette.SolidColor);
+        bitmapOut.Save("D:\\Projects\\Bitmaps\\frame.bmp");
+
+#pragma warning disable CA1031 // Do not catch general exception types
+        try
+        {
+            using (FileStream fs = new FileStream("D:\\Projects\\Bitmaps\\raw.dat", FileMode.Create, FileAccess.Write))
+            {
+                fs.Write(opBitmap.BitmapData.ToArray(), 0, opBitmap.BitmapData.ToArray().Length);
+            }
+        }
+        catch (Exception)
+        {
+
+        }
+#pragma warning restore CA1031 // Do not catch general exception types
     }
 
     [RelayCommand]

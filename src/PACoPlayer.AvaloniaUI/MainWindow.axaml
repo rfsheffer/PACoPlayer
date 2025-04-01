@@ -16,6 +16,8 @@ Using Avalonia UI style markdown, create a UI that looks like a video player wit
             <MenuItem Header="File">
                 <MenuItem Header="Open file..." Command="{Binding OpenFileCommand}" />
                 <Separator />
+                <MenuItem Header="Export" Command="{Binding ExportCommand}" />
+                <Separator />
                 <MenuItem Header="Exit" Command="{Binding ExitCommand}" />
             </MenuItem>
         </Menu>
