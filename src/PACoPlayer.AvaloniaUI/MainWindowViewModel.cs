@@ -199,7 +199,9 @@ public partial class MainWindowViewModel : ObservableObject
         {
             Capacity = 256
         };
-        using (FileStream fs = new FileStream("D:\\Projects\\Bitmaps\\PACO.PAL", FileMode.Open))
+
+        // Not using PACO palette for iron helix
+        /*using (FileStream fs = new FileStream("D:\\Projects\\Bitmaps\\PACO.PAL", FileMode.Open))
         {
             byte[] bytes = new byte[1024];
             if (fs.Read(bytes, 0, 1024) == 1024)
@@ -210,7 +212,7 @@ public partial class MainWindowViewModel : ObservableObject
                     pacoPalette.Add(new RawColorBytes(bytes[offset + 2], bytes[offset + 1], bytes[offset + 0]));
                 }
             }
-        }
+        }*/
 
         RLEBitmap bitmapOut = new RLEBitmap(opBitmap.Size.Width, opBitmap.Size.Height, opBitmap.BitmapData.ToArray(), opPalette.SolidColor, pacoPalette.ToArray());
         bitmapOut.Save("D:\\Projects\\Bitmaps\\frame.bmp"); // Do not catch general exception types
