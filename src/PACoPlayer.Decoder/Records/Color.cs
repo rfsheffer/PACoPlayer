@@ -9,6 +9,17 @@ public record Color
     public byte Green { get; init; }
     public byte Blue { get; init; }
 
+    public Color()
+    {
+    }
+
+    public Color(int hex)
+    {
+        Red = (byte)(hex >> 16);
+        Green = (byte)((hex >> 8) & 0x0000FF);
+        Blue = (byte)(hex & 0x0000FF);
+    }
+
     public override string ToString() =>
         $"#{Red:X2}{Green:X2}{Blue:X2}";
 }

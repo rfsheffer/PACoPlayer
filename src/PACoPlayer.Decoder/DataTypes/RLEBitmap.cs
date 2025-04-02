@@ -22,32 +22,31 @@ namespace PACoPlayer.Decoder.DataTypes
 
     public class RLEBitmap
     {
+        // Width and height in pixels
         private readonly int _width;
         private readonly int _height;
-        private readonly Color _solidColor;
-        private readonly byte[] _imageBytes;
-        private readonly RawColorBytes[] _palette;
 
-        public RLEBitmap(int width, int height, byte[] bytes, Color solidColor, RawColorBytes[] palette)
+        // Image bytes for bmp output (B, G, R, A)
+        private readonly byte[] _imageBytes;
+
+        // The palette used to convert pixel palette indicies into colors
+        private readonly Color[] _palette;
+
+        // The pixels themselves (_width * _height = length)
+        private readonly byte[] _pixels;
+
+        public RLEBitmap(int width, int height, Color[] palette)
         {
             _width = width;
             _height = height;
             _imageBytes = new byte[width * height * 4];
-            _solidColor = solidColor;
             _palette = palette;
-
-            if (bytes.Length > 0)
+            if(_palette.Length != 256)
             {
-                DecodeRLE(bytes);
+                // Default to using the quicktime palette (might want an option for this)
+                _palette = ColorPalettes256.QuickTime;
             }
-        }
-
-        public void SetPixel(int x, int y, RawColorBytes color)
-        {
-            int offset = (((_height - y - 1) * _width) + x) * 4;
-            _imageBytes[offset + 0] = color.B;
-            _imageBytes[offset + 1] = color.G;
-            _imageBytes[offset + 2] = color.R;
+            _pixels = new byte[width * height];
         }
 
         public byte[] GetBitmapBytes()
@@ -68,21 +67,23 @@ namespace PACoPlayer.Decoder.DataTypes
         }
 
         // NOTE: Decoding info comes from "CAVF RLE notes.pdf" which contains two documents contradicting eachother.
-// TODO WHEN DONE: Remove all these disables
-#pragma warning disable CA1822 // Mark members as static
-#pragma warning disable IDE0059 // Unnecessary assignment of a value
-#pragma warning disable CS0162 // Unreachable code detected
-        private void DecodeRLE(byte[] bytes)
+        public void DecodeRLE(Point origin, Rectangle size, CompressionKind compression, byte[] bytes)
         {
+            if(compression != CompressionKind.Rle)
+            {
+                // Compact coming soon.
+                return;
+            }
+
             /*
              * CURRENT ASSUMPTIONS:
              * WORD = 16bits (platforms around 1990)
              * SCAN LINE = bitmap row
-             * PIXEL = single decoded entry
-             * DECODED BYTE = pixel value which is a lookup into the 256 color look up table (LUT)
+             * PIXEL = single decoded entry (Index into the palette)
              * ab cd ef gh ij etc denote bytes and nibbles in order
              */
-            List<byte> bytesDecoded = new List<byte>();
+            // TODO: SWITCH TO USING ARRAY ONCE WE FIX OFFSET ISSUES
+            List<byte> pixels = new List<byte>();
 
             // LUT table
             List<byte> lastTableBytes = new List<byte>();
@@ -99,7 +100,7 @@ namespace PACoPlayer.Decoder.DataTypes
                     for (int i = 0; i < count; ++i)
                     {
                         byteIndex += 1;
-                        bytesDecoded.Add(bytes[byteIndex]);
+                        pixels.Add(bytes[byteIndex]);
                     }
                 }
                 else if (b == 0)
@@ -118,7 +119,7 @@ namespace PACoPlayer.Decoder.DataTypes
                                 for (int i = 0; i < bcd; ++i)
                                 {
                                     byteIndex += 1;
-                                    bytesDecoded.Add(bytes[byteIndex]);
+                                    pixels.Add(bytes[byteIndex]);
                                 }
                                 break;
                             }
@@ -130,7 +131,7 @@ namespace PACoPlayer.Decoder.DataTypes
                                 byte ef = bytes[byteIndex += 1];
                                 for (int i = 0; i < bcd; ++i)
                                 {
-                                    bytesDecoded.Add(ef);
+                                    pixels.Add(ef);
                                 }
                                 break;
                             }
@@ -143,8 +144,8 @@ namespace PACoPlayer.Decoder.DataTypes
                                 byte gh = bytes[byteIndex += 1];
                                 for (int i = 0; i < bcd; ++i)
                                 {
-                                    bytesDecoded.Add(ef);
-                                    bytesDecoded.Add(gh);
+                                    pixels.Add(ef);
+                                    pixels.Add(gh);
                                 }
                                 break;
                             }
@@ -159,10 +160,10 @@ namespace PACoPlayer.Decoder.DataTypes
                                 byte kl = bytes[byteIndex += 1];
                                 for (int i = 0; i < bcd; ++i)
                                 {
-                                    bytesDecoded.Add(ef);
-                                    bytesDecoded.Add(gh);
-                                    bytesDecoded.Add(ij);
-                                    bytesDecoded.Add(kl);
+                                    pixels.Add(ef);
+                                    pixels.Add(gh);
+                                    pixels.Add(ij);
+                                    pixels.Add(kl);
                                 }
                                 break;
                             }
@@ -170,34 +171,34 @@ namespace PACoPlayer.Decoder.DataTypes
                             {
                                 // bcd is count of the number of pixels to skip
                                 int bcd = ((bytes[byteIndex] & 0x0F) << 8) | bytes[byteIndex + 1];
+                                byteIndex += 1;
                                 for (int i = 0; i < bcd; ++i)
                                 {
-                                    bytesDecoded.Add(0); // TODO: What would we fill with?
+                                    pixels.Add(0); // TODO: Should fill with previous pixel
                                 }
-                                throw new NotImplementedException("untested");
                                 break;
                             }
                         case 5:
                             {
                                 // bcd is count of the number of scan lines to skip (0 means go directly to next scan line)
                                 int bcd = ((bytes[byteIndex] & 0x0F) << 8) | bytes[byteIndex + 1];
+                                byteIndex += 1;
                                 int numLineToFill = bcd > 0 ? bcd : 1;
                                 for (int line = 0; line < numLineToFill; ++line)
                                 {
-                                    int leftInScanLine = _width - (bytesDecoded.Count % _width);
+                                    int leftInScanLine = _width - (pixels.Count % _width);
                                     for (int i = 0; i < leftInScanLine; ++i)
                                     {
-                                        bytesDecoded.Add(0); // TODO: What would we fill with?
+                                        pixels.Add(0); // TODO: Should fill with previous pixel
                                     }
                                 }
-
-                                throw new NotImplementedException("untested");
                                 break;
                             }
                         case 6:
                             {
+                                // NOTE: Unseen OP
                                 // fill scan lines
-                                byte fillType = (byte)(bytes[byteIndex] & 0x0F);
+                                /*byte fillType = (byte)(bytes[byteIndex] & 0x0F);
                                 switch (fillType)
                                 {
                                     case 0:
@@ -226,8 +227,8 @@ namespace PACoPlayer.Decoder.DataTypes
                                             break;
                                         }
                                 }
+                                break;*/
                                 throw new NotImplementedException("fill scan lines");
-                                break;
                             }
                         case 15:
                             // end of bitmap, stop here!
@@ -243,29 +244,31 @@ namespace PACoPlayer.Decoder.DataTypes
                     //                    : -1 ab cd ef gh ij
                     // following byte is byte-count for word/long data (pos/neg)
                     byteIndex += 1;
-                    int numToRepeat = bytes[byteIndex];
-                    if (numToRepeat > 0) // next 16 bits repeated
+                    int numToRepeat = bytes[byteIndex]; // ab
+                    if (numToRepeat < 128) // next 16 bits repeated
                     {
-                        byteIndex += 1;
+                        byte cd = bytes[byteIndex += 1];
+                        byte ef = bytes[byteIndex += 1];
                         for (int i = 0; i < numToRepeat; ++i)
                         {
-                            bytesDecoded.Add(bytes[byteIndex]);
-                            bytesDecoded.Add(bytes[byteIndex + 1]);
+                            pixels.Add(cd);
+                            pixels.Add(ef);
                         }
-                        byteIndex += 1;
                     }
                     else // next 32 bits repeated
                     {
-                        numToRepeat *= -1;
-                        byteIndex += 1;
+                        numToRepeat = 256 - numToRepeat;
+                        byte cd = bytes[byteIndex += 1];
+                        byte ef = bytes[byteIndex += 1];
+                        byte gh = bytes[byteIndex += 1];
+                        byte ij = bytes[byteIndex += 1];
                         for (int i = 0; i < numToRepeat; ++i)
                         {
-                            bytesDecoded.Add(bytes[byteIndex]);
-                            bytesDecoded.Add(bytes[byteIndex + 1]);
-                            bytesDecoded.Add(bytes[byteIndex + 2]);
-                            bytesDecoded.Add(bytes[byteIndex + 3]);
+                            pixels.Add(cd);
+                            pixels.Add(ef);
+                            pixels.Add(gh);
+                            pixels.Add(ij);
                         }
-                        byteIndex += 3;
                     }
                 }
                 else if (b == -2)
@@ -279,7 +282,7 @@ namespace PACoPlayer.Decoder.DataTypes
                     {
                         for (int i = 0; i < numToSkip; ++i)
                         {
-                            bytesDecoded.Add(0); // TODO: What would we fill with?
+                            pixels.Add(0); // TODO: Should fill with previous pixel
                         }
                     }
                     else
@@ -305,10 +308,10 @@ namespace PACoPlayer.Decoder.DataTypes
                     // repeat the following byte out to the completion of this scan line (end of row?)
                     byteIndex += 1;
                     byte repeatB = bytes[byteIndex];
-                    int leftInScanLine = _width - (bytesDecoded.Count % _width);
+                    int leftInScanLine = _width - (pixels.Count % _width);
                     for (int i = 0; i < leftInScanLine; ++i)
                     {
-                        bytesDecoded.Add(repeatB);
+                        pixels.Add(repeatB);
                     }
                     throw new NotImplementedException("untested");
                 }
@@ -320,7 +323,7 @@ namespace PACoPlayer.Decoder.DataTypes
                     byte repeatB = bytes[byteIndex];
                     for (int i = 0; i < numToRepeat; ++i)
                     {
-                        bytesDecoded.Add(repeatB);
+                        pixels.Add(repeatB);
                     }
                 }
             }
@@ -331,16 +334,9 @@ namespace PACoPlayer.Decoder.DataTypes
             }
 
             // TODO: error on incorrect decoded to pixel count, not just less than.
-            if(bytesDecoded.Count < _width * _height)
+            if(pixels.Count < _width * _height)
             {
                 throw new RLEException("Invalid number of decoded bytes!");
-            }
-
-            RawColorBytes[] palette = ColorPalettes256.QuickTime;
-            if (_palette.Length == 256)
-            {
-                // Custom palette use here
-                palette = _palette;
             }
 
             int totalPixels = _width * _height;
@@ -349,12 +345,12 @@ namespace PACoPlayer.Decoder.DataTypes
                 int x = decodedIndex % _width;
                 int y = _height - (decodedIndex / _width) - 1; // The output bytesDecoded is flipped vertically
 
-                RawColorBytes color = palette[bytesDecoded[x + (y * _width)]];
+                Color color = _palette[pixels[x + (y * _width)]];
 
                 int byteOffset = decodedIndex * 4;
-                _imageBytes[byteOffset + 0] = color.B;
-                _imageBytes[byteOffset + 1] = color.G;
-                _imageBytes[byteOffset + 2] = color.R;
+                _imageBytes[byteOffset + 0] = color.Blue;
+                _imageBytes[byteOffset + 1] = color.Green;
+                _imageBytes[byteOffset + 2] = color.Red;
             }
         }
 

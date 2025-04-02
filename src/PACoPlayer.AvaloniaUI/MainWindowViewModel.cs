@@ -195,13 +195,13 @@ public partial class MainWindowViewModel : ObservableObject
         }
 #pragma warning restore CA1031
 
-        List<RawColorBytes> pacoPalette = new List<RawColorBytes>
+        /*List<RawColorBytes> pacoPalette = new List<RawColorBytes>
         {
             Capacity = 256
         };
 
         // Not using PACO palette for iron helix
-        /*using (FileStream fs = new FileStream("D:\\Projects\\Bitmaps\\PACO.PAL", FileMode.Open))
+        using (FileStream fs = new FileStream("D:\\Projects\\Bitmaps\\PACO.PAL", FileMode.Open))
         {
             byte[] bytes = new byte[1024];
             if (fs.Read(bytes, 0, 1024) == 1024)
@@ -214,7 +214,8 @@ public partial class MainWindowViewModel : ObservableObject
             }
         }*/
 
-        RLEBitmap bitmapOut = new RLEBitmap(opBitmap.Size.Width, opBitmap.Size.Height, opBitmap.BitmapData.ToArray(), opPalette.SolidColor, pacoPalette.ToArray());
+        RLEBitmap bitmapOut = new RLEBitmap(opBitmap.Size.Width, opBitmap.Size.Height, opPalette.ColorTable.ToArray());
+        bitmapOut.DecodeRLE(opBitmap.Origin, opBitmap.Size, opBitmap.Compression, opBitmap.BitmapData.ToArray());
         bitmapOut.Save("D:\\Projects\\Bitmaps\\frame.bmp"); // Do not catch general exception types
     }
 

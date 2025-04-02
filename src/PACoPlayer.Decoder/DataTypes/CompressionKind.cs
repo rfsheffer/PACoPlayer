@@ -6,6 +6,8 @@ namespace PACoPlayer.Decoder.DataTypes;
 public enum CompressionKind
 {
     None,
+    // Non-compact
     Rle,
+    // compact
     RleInterlaced,
 }
