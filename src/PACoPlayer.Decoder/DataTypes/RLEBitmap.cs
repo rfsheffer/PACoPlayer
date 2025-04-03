@@ -54,15 +54,16 @@ namespace PACoPlayer.Decoder.DataTypes
             _imageBytes = imageBytes;
         }
 
-        public void PushPixel(byte paletteIndex)
+        public void WritePixel(byte paletteIndex)
         {
             if(_currentPixel >= _area.Width * _area.Height)
             {
                 throw new RLEException("Pushing pixels outside the drawing area!");
             }
 
+            // NOTE: Image is vertically flipped so we write from bottom to top
             int x = _origin.Left + (_currentPixel % _area.Width);
-            int y = _origin.Top + (_currentPixel / _area.Width);
+            int y = _origin.Top + (_area.Height - 1 - (_currentPixel / _area.Width));
             int pixelIndex = x + (y * _size.Width);
 
             _pixels[pixelIndex] = paletteIndex;
@@ -95,6 +96,8 @@ namespace PACoPlayer.Decoder.DataTypes
 
             _currentPixel += _area.Width - (_currentPixel % _area.Width);
         }
+
+        public int CurrentScanLine() => _currentPixel / _area.Width;
 
         public int PixelsLeftInScanline() => _area.Width - (_currentPixel % _area.Width);
     }
@@ -152,7 +155,7 @@ namespace PACoPlayer.Decoder.DataTypes
         /**
          * Decodes the RLE into bitmap data
          */
-        public void DecodeRLE(Point origin, Rectangle size, CompressionKind compression, byte[] bytes)
+        public void DecodeRLE(Point origin, Rectangle area, CompressionKind compression, byte[] bytes)
         {
             if(compression == CompressionKind.None)
             {
@@ -160,18 +163,16 @@ namespace PACoPlayer.Decoder.DataTypes
             }
 
             /*
-             * CURRENT ASSUMPTIONS:
+             * IMPLEMENTATION TERMINOLOGIES:
              * WORD = 16bits (platforms around 1990)
              * SCAN LINE = bitmap row
              * PIXEL = single decoded entry (Index into the palette)
              * ab cd ef gh ij etc denote bytes and nibbles in order
              */
-            // TODO: SWITCH TO USING ARRAY ONCE WE FIX OFFSET ISSUES
-            List<byte> pixels = new List<byte>();
-            //PixelWriter pixelWriter = new PixelWriter(origin, size, _palette, _pixels, _imageBytes);
+            PixelWriter pixelWriter = new(_size, origin, area, _palette, _pixels, _imageBytes);
 
-            // Compact LUT
-            byte[] clrs = new byte[16];
+            // LUT used for "interlaced/bit packed" compact RLE mode
+            byte[] compactLUT = new byte[16];
 
             int byteIndex;
             bool endOfBitmap = false;
@@ -184,7 +185,7 @@ namespace PACoPlayer.Decoder.DataTypes
                     int count = b;
                     for (int i = 0; i < count; ++i)
                     {
-                        pixels.Add(bytes[byteIndex++]);
+                        pixelWriter.WritePixel(bytes[byteIndex++]);
                     }
                 }
                 else if (b == 0)
@@ -201,7 +202,7 @@ namespace PACoPlayer.Decoder.DataTypes
                                 byteIndex += 2;
                                 for (int i = 0; i < bcd; ++i)
                                 {
-                                    pixels.Add(bytes[byteIndex++]);
+                                    pixelWriter.WritePixel(bytes[byteIndex++]);
                                 }
                                 break;
                             }
@@ -213,7 +214,7 @@ namespace PACoPlayer.Decoder.DataTypes
                                 byte ef = bytes[byteIndex++];
                                 for (int i = 0; i < bcd; ++i)
                                 {
-                                    pixels.Add(ef);
+                                    pixelWriter.WritePixel(ef);
                                 }
                                 break;
                             }
@@ -226,8 +227,8 @@ namespace PACoPlayer.Decoder.DataTypes
                                 byte gh = bytes[byteIndex++];
                                 for (int i = 0; i < bcd; ++i)
                                 {
-                                    pixels.Add(ef);
-                                    pixels.Add(gh);
+                                    pixelWriter.WritePixel(ef);
+                                    pixelWriter.WritePixel(gh);
                                 }
                                 break;
                             }
@@ -242,10 +243,10 @@ namespace PACoPlayer.Decoder.DataTypes
                                 byte kl = bytes[byteIndex++];
                                 for (int i = 0; i < bcd; ++i)
                                 {
-                                    pixels.Add(ef);
-                                    pixels.Add(gh);
-                                    pixels.Add(ij);
-                                    pixels.Add(kl);
+                                    pixelWriter.WritePixel(ef);
+                                    pixelWriter.WritePixel(gh);
+                                    pixelWriter.WritePixel(ij);
+                                    pixelWriter.WritePixel(kl);
                                 }
                                 break;
                             }
@@ -256,7 +257,7 @@ namespace PACoPlayer.Decoder.DataTypes
                                 byteIndex += 2;
                                 for (int i = 0; i < bcd; ++i)
                                 {
-                                    pixels.Add(0); // TODO: Should fill with previous pixel
+                                    pixelWriter.SkipPixel();
                                 }
                                 break;
                             }
@@ -268,11 +269,7 @@ namespace PACoPlayer.Decoder.DataTypes
                                 int numLineToFill = bcd > 0 ? bcd : 1;
                                 for (int line = 0; line < numLineToFill; ++line)
                                 {
-                                    int leftInScanLine = _size.Width - (pixels.Count % _size.Width);
-                                    for (int i = 0; i < leftInScanLine; ++i)
-                                    {
-                                        pixels.Add(0); // TODO: Should fill with previous pixel
-                                    }
+                                    pixelWriter.SkipScanLine();
                                 }
                                 break;
                             }
@@ -322,7 +319,7 @@ namespace PACoPlayer.Decoder.DataTypes
                 }
                 else if (b == -1)
                 {
-                    //               bytes: 1  2  3  4  5
+                    //               bytes: 1  2  3  4  5  6
                     //                    : -1 ab cd ef gh ij
                     // following byte is byte-count for word/long data (pos/neg)
                     int numToRepeat = bytes[byteIndex++]; // ab
@@ -332,8 +329,8 @@ namespace PACoPlayer.Decoder.DataTypes
                         byte ef = bytes[byteIndex++];
                         for (int i = 0; i < numToRepeat; ++i)
                         {
-                            pixels.Add(cd);
-                            pixels.Add(ef);
+                            pixelWriter.WritePixel(cd);
+                            pixelWriter.WritePixel(ef);
                         }
                     }
                     else // next 32 bits repeated
@@ -345,10 +342,10 @@ namespace PACoPlayer.Decoder.DataTypes
                         byte ij = bytes[byteIndex++];
                         for (int i = 0; i < numToRepeat; ++i)
                         {
-                            pixels.Add(cd);
-                            pixels.Add(ef);
-                            pixels.Add(gh);
-                            pixels.Add(ij);
+                            pixelWriter.WritePixel(cd);
+                            pixelWriter.WritePixel(ef);
+                            pixelWriter.WritePixel(gh);
+                            pixelWriter.WritePixel(ij);
                         }
                     }
                 }
@@ -362,7 +359,7 @@ namespace PACoPlayer.Decoder.DataTypes
                     {
                         for (int i = 0; i < numToSkip; ++i)
                         {
-                            pixels.Add(0); // TODO: Should fill with previous pixel
+                            pixelWriter.SkipPixel();
                         }
                     }
                     else
@@ -375,17 +372,18 @@ namespace PACoPlayer.Decoder.DataTypes
                         {
                             if ((mask & 1) != 0)
                             {
-                                clrs[i] = bytes[byteIndex++];
+                                compactLUT[i] = bytes[byteIndex++];
                             }
                         }
 
                         // Fill in the rest of the scan line by parsing tightly packed RLE and using lookup data
-                        int pixelsLeftInScan = _size.Width - (pixels.Count % _size.Width);
-                        while (pixelsLeftInScan > 0)
+                        int currentScanLine = pixelWriter.CurrentScanLine();
+                        while (currentScanLine == pixelWriter.CurrentScanLine())
                         {
                             short op = bytes[byteIndex++];
                             short len = (short)(op & 0xF);
                             op >>= 4;
+
                             if (op == 0)
                             {
                                 op = len;
@@ -398,13 +396,13 @@ namespace PACoPlayer.Decoder.DataTypes
                                             {
                                                 len--;
                                                 short c = bytes[byteIndex++];
-                                                pixels.Add(clrs[c >> 4]); --pixelsLeftInScan;
+                                                pixelWriter.WritePixel(compactLUT[c >> 4]);
                                                 if (len == 0)
                                                 {
                                                     break;
                                                 }
                                                 len--;
-                                                pixels.Add(clrs[c & 0xF]); --pixelsLeftInScan;
+                                                pixelWriter.WritePixel(compactLUT[c & 0xF]);
                                             }
                                             break;
                                         }
@@ -414,38 +412,38 @@ namespace PACoPlayer.Decoder.DataTypes
                                             while (len > 0)
                                             {
                                                 len--;
-                                                pixels.Add(clrs[c & 0xF]); --pixelsLeftInScan;
+                                                pixelWriter.WritePixel(compactLUT[c & 0xF]);
                                             }
                                             break;
                                         }
                                     case 2:
                                         {
                                             short c = bytes[byteIndex++];
-                                            byte c1 = clrs[c >> 4];
-                                            byte c2 = clrs[c & 0xF];
+                                            byte c1 = compactLUT[c >> 4];
+                                            byte c2 = compactLUT[c & 0xF];
                                             while (len > 0)
                                             {
                                                 len--;
-                                                pixels.Add(c1); --pixelsLeftInScan;
-                                                pixels.Add(c2); --pixelsLeftInScan;
+                                                pixelWriter.WritePixel(c1);
+                                                pixelWriter.WritePixel(c2);
                                             }
                                             break;
                                         }
                                     case 3:
                                         {
                                             short c = bytes[byteIndex++];
-                                            byte c1 = clrs[c >> 4];
-                                            byte c2 = clrs[c & 0xF];
+                                            byte c1 = compactLUT[c >> 4];
+                                            byte c2 = compactLUT[c & 0xF];
                                             c = bytes[byteIndex++];
-                                            byte c3 = clrs[c >> 4];
-                                            byte c4 = clrs[c & 0xF];
+                                            byte c3 = compactLUT[c >> 4];
+                                            byte c4 = compactLUT[c & 0xF];
                                             while (len > 0)
                                             {
                                                 len--;
-                                                pixels.Add(c1); --pixelsLeftInScan;
-                                                pixels.Add(c2); --pixelsLeftInScan;
-                                                pixels.Add(c3); --pixelsLeftInScan;
-                                                pixels.Add(c4); --pixelsLeftInScan;
+                                                pixelWriter.WritePixel(c1);
+                                                pixelWriter.WritePixel(c2);
+                                                pixelWriter.WritePixel(c3);
+                                                pixelWriter.WritePixel(c4);
                                             }
                                             break;
                                         }
@@ -454,34 +452,34 @@ namespace PACoPlayer.Decoder.DataTypes
                                             while (len > 0)
                                             {
                                                 len--;
-                                                pixels.Add(0); --pixelsLeftInScan;
+                                                pixelWriter.SkipPixel();
                                             }
                                             break;
                                         }
                                     case 5:
                                         {
-                                            // This is like skipping to the end of the scan line so just break out?
-                                            pixelsLeftInScan = 0;
+                                            // End the current scanline
+                                            pixelWriter.SkipScanLine();
                                             break;
                                         }
                                 }
                             }
                             else if (op < 8) // copy 1-7 colors
                             {
-                                pixels.Add(clrs[len]); --pixelsLeftInScan;
+                                pixelWriter.WritePixel(compactLUT[len]);
                                 op--;
                                 while(op > 0)
                                 {
                                     --op;
 
                                     short c = bytes[byteIndex++];
-                                    pixels.Add(clrs[c >> 4]); --pixelsLeftInScan;
+                                    pixelWriter.WritePixel(compactLUT[c >> 4]);
                                     if (op == 0)
                                     {
                                         break;
                                     }
 
-                                    pixels.Add(clrs[c & 0xF]); --pixelsLeftInScan;
+                                    pixelWriter.WritePixel(compactLUT[c & 0xF]);
                                     --op;
                                 }
                             }
@@ -491,7 +489,7 @@ namespace PACoPlayer.Decoder.DataTypes
                                 while(op > 0)
                                 {
                                     --op;
-                                    pixels.Add(clrs[len]); --pixelsLeftInScan;
+                                    pixelWriter.WritePixel(compactLUT[len]);
                                 }
                             }
                             else if (op < 15) // skip number of pixels in low nibbel
@@ -499,7 +497,7 @@ namespace PACoPlayer.Decoder.DataTypes
                                 while (len > 0)
                                 {
                                     --len;
-                                    pixels.Add(0); --pixelsLeftInScan; // TODO: Should fill with previous pixel
+                                    pixelWriter.SkipPixel();
                                 }
                             }
                             else
@@ -507,13 +505,13 @@ namespace PACoPlayer.Decoder.DataTypes
                                 if (len < 8) // Pair run
                                 {
                                     short c = bytes[byteIndex++];
-                                    byte c1 = clrs[c >> 4];
-                                    byte c2 = clrs[c & 0xF];
+                                    byte c1 = compactLUT[c >> 4];
+                                    byte c2 = compactLUT[c & 0xF];
                                     while (len > 0)
                                     {
                                         len--;
-                                        pixels.Add(c1); --pixelsLeftInScan;
-                                        pixels.Add(c2); --pixelsLeftInScan;
+                                        pixelWriter.WritePixel(c1);
+                                        pixelWriter.WritePixel(c2);
                                     }
                                 }
                                 else // Quad run
@@ -521,35 +519,35 @@ namespace PACoPlayer.Decoder.DataTypes
                                     len = (sbyte)(16 - len);
                                     short c = bytes[byteIndex++];
 
-                                    byte c1 = clrs[c >> 4];
-                                    byte c2 = clrs[c & 0xF];
+                                    byte c1 = compactLUT[c >> 4];
+                                    byte c2 = compactLUT[c & 0xF];
                                     c = bytes[byteIndex++];
-                                    byte c3 = clrs[c >> 4];
-                                    byte c4 = clrs[c & 0xF];
+                                    byte c3 = compactLUT[c >> 4];
+                                    byte c4 = compactLUT[c & 0xF];
                                     while (len > 0)
                                     {
                                         len--;
-                                        pixels.Add(c1); --pixelsLeftInScan;
-                                        pixels.Add(c2); --pixelsLeftInScan;
-                                        pixels.Add(c3); --pixelsLeftInScan;
-                                        pixels.Add(c4); --pixelsLeftInScan;
+                                        pixelWriter.WritePixel(c1);
+                                        pixelWriter.WritePixel(c2);
+                                        pixelWriter.WritePixel(c3);
+                                        pixelWriter.WritePixel(c4);
                                     }
                                 }
                             }
                         }
                     }
                 }
-                else if (b == -128)
+                /*else if (b == -128)
                 {
                     // repeat the following byte out to the completion of this scan line (end of row?)
                     byte repeatB = bytes[byteIndex++];
-                    int leftInScanLine = _size.Width - (pixels.Count % _size.Width);
+                    int leftInScanLine = pixelWriter.PixelsLeftInScanline();
                     for (int i = 0; i < leftInScanLine; ++i)
                     {
-                        pixels.Add(repeatB);
+                        pixelWriter.WritePixel(repeatB);
                     }
-                    throw new NotImplementedException("untested");
-                }
+                    //throw new NotImplementedException("untested");
+                }*/
                 else
                 {
                     // Repeat the following byte N times
@@ -557,7 +555,7 @@ namespace PACoPlayer.Decoder.DataTypes
                     byte repeatB = bytes[byteIndex++];
                     for (int i = 0; i < numToRepeat; ++i)
                     {
-                        pixels.Add(repeatB);
+                        pixelWriter.WritePixel(repeatB);
                     }
                 }
             }
@@ -565,28 +563,6 @@ namespace PACoPlayer.Decoder.DataTypes
             if(!endOfBitmap)
             {
                 throw new RLEException("Did not receive end of bitmap flag!");
-            }
-
-            // TODO: error on incorrect decoded to pixel count, not just less than.
-            if(pixels.Count < _size.Width * _size.Height)
-            {
-                throw new RLEException("Invalid number of decoded bytes!");
-            }
-
-            // TODO: Image bytes can just be updated as pixels is updated above.
-            //       Will implement with the pixel writer
-            int totalPixels = _size.Width * _size.Height;
-            for (int decodedIndex = 0; decodedIndex < totalPixels; decodedIndex++)
-            {
-                int x = decodedIndex % _size.Width;
-                int y = _size.Height - (decodedIndex / _size.Width) - 1; // The output bytesDecoded is flipped vertically
-
-                Color color = _palette[pixels[x + (y * _size.Width)]];
-
-                int byteOffset = decodedIndex * 4;
-                _imageBytes[byteOffset + 0] = color.Blue;
-                _imageBytes[byteOffset + 1] = color.Green;
-                _imageBytes[byteOffset + 2] = color.Red;
             }
         }
     }

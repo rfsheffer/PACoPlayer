@@ -9,6 +9,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using Avalonia.Automation.Peers;
 using Avalonia.Media.Imaging;
 using BinForge;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -16,6 +17,7 @@ using CommunityToolkit.Mvvm.Input;
 using PACoPlayer.Decoder;
 using PACoPlayer.Decoder.DataTypes;
 using PACoPlayer.Decoder.Records;
+using SkiaSharp;
 
 namespace PACoPlayer.AvaloniaUI;
 
@@ -177,46 +179,71 @@ public partial class MainWindowViewModel : ObservableObject
         if (_openedFile == null) { return; }
         if(_openedFile.ChunkData.Count <= 0) { return; }
 
-        Chunk chunk = _openedFile.ChunkData[0];
-        OpPalette opPalette = (OpPalette)chunk.OpCodes[0];
-        OpBitmap opBitmap = (OpBitmap)chunk.OpCodes[1];
+        OpPalette? firstPalette = null;
+        OpBitmap? firstBitmap = null;
 
-#pragma warning disable CA1031 // Do not catch general exception types
-        try
+        foreach (Chunk chunk in _openedFile.ChunkData)
         {
-            using (FileStream fs = new FileStream("D:\\Projects\\Bitmaps\\raw.dat", FileMode.Create, FileAccess.Write))
+            foreach(OpHeader header in chunk.OpCodes)
             {
-                fs.Write(opBitmap.BitmapData.ToArray(), 0, opBitmap.BitmapData.ToArray().Length);
-            }
-        }
-        catch (Exception)
-        {
-
-        }
-#pragma warning restore CA1031
-
-        /*List<RawColorBytes> pacoPalette = new List<RawColorBytes>
-        {
-            Capacity = 256
-        };
-
-        // Not using PACO palette for iron helix
-        using (FileStream fs = new FileStream("D:\\Projects\\Bitmaps\\PACO.PAL", FileMode.Open))
-        {
-            byte[] bytes = new byte[1024];
-            if (fs.Read(bytes, 0, 1024) == 1024)
-            {
-                for (int i = 0; i < 256; ++i)
+                if(header is OpPalette pallet)
                 {
-                    int offset = i * 4;
-                    pacoPalette.Add(new RawColorBytes(bytes[offset + 2], bytes[offset + 1], bytes[offset + 0]));
+                    firstPalette = pallet;
+                }
+                else if (header is OpBitmap bitmap)
+                {
+                    firstBitmap = bitmap;
                 }
             }
-        }*/
 
-        RLEBitmap bitmapOut = new RLEBitmap(opBitmap.Size, opPalette.ColorTable.ToArray());
-        bitmapOut.DecodeRLE(opBitmap.Origin, opBitmap.Size, opBitmap.Compression, opBitmap.BitmapData.ToArray());
-        bitmapOut.Save("D:\\Projects\\Bitmaps\\frame.bmp"); // Do not catch general exception types
+            if (firstPalette != null && firstBitmap != null)
+            {
+                break;
+            }
+        }
+
+        if(firstPalette == null || firstBitmap == null)
+        {
+            return;
+        }
+
+        // Create the initial bitmap
+        RLEBitmap bitmapOut = new RLEBitmap(firstBitmap.Size, firstPalette.ColorTable.ToArray());
+
+        // Render out frames
+        int frameIndex = 0;
+        foreach(Chunk chunk in _openedFile.ChunkData)
+        {
+            foreach (OpHeader header in chunk.OpCodes)
+            {
+                if (header is OpBitmap bitmap)
+                {
+#pragma warning disable CA1031 // Do not catch general exception types
+                    try
+                    {
+                        using (FileStream fs = new FileStream($"D:\\Projects\\Bitmaps\\raw_{frameIndex}.dat", FileMode.Create, FileAccess.Write))
+                        {
+                            fs.Write(bitmap.BitmapData.ToArray(), 0, bitmap.BitmapData.ToArray().Length);
+                        }
+                    }
+                    catch (Exception)
+                    {
+
+                    }
+                    //try
+                    //{
+                        bitmapOut.DecodeRLE(bitmap.Origin, bitmap.Size, bitmap.Compression, bitmap.BitmapData.ToArray());
+                        bitmapOut.Save($"D:\\Projects\\Bitmaps\\frame_{frameIndex}.bmp");
+                        ++frameIndex;
+                    //}
+                    //catch (Exception)
+                    //{
+                    //    return;
+                    //}
+#pragma warning restore CA1031
+                }
+            }
+        }
     }
 
     [RelayCommand]
