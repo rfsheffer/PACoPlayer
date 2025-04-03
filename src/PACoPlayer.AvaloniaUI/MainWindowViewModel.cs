@@ -214,7 +214,7 @@ public partial class MainWindowViewModel : ObservableObject
             }
         }*/
 
-        RLEBitmap bitmapOut = new RLEBitmap(opBitmap.Size.Width, opBitmap.Size.Height, opPalette.ColorTable.ToArray());
+        RLEBitmap bitmapOut = new RLEBitmap(opBitmap.Size, opPalette.ColorTable.ToArray());
         bitmapOut.DecodeRLE(opBitmap.Origin, opBitmap.Size, opBitmap.Compression, opBitmap.BitmapData.ToArray());
         bitmapOut.Save("D:\\Projects\\Bitmaps\\frame.bmp"); // Do not catch general exception types
     }
