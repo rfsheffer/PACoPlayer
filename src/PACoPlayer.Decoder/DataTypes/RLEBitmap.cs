@@ -63,7 +63,7 @@ namespace PACoPlayer.Decoder.DataTypes
 
             // NOTE: Image is vertically flipped so we write from bottom to top
             int x = _origin.Left + (_currentPixel % _area.Width);
-            int y = _origin.Top + (_area.Height - 1 - (_currentPixel / _area.Width));
+            int y = _size.Height - 1 - _origin.Top - (_currentPixel / _area.Width);
             int pixelIndex = x + (y * _size.Width);
 
             _pixels[pixelIndex] = paletteIndex;
@@ -109,6 +109,8 @@ namespace PACoPlayer.Decoder.DataTypes
 
         // Image bytes for bmp output (B, G, R, A)
         private readonly byte[] _imageBytes;
+
+        public byte[] GetImageBytes() => _imageBytes;
 
         // The palette used to convert pixel palette indicies into colors
         private readonly Color[] _palette;

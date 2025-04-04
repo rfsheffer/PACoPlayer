@@ -129,6 +129,9 @@ public partial class MainWindowViewModel : ObservableObject
     [ObservableProperty]
     private int _selectedOpcodeIndex;
 
+    [ObservableProperty]
+    private Bitmap? _videoViewportBitmap;
+
     public Func<Task<string?>>? ShowOpenFileDialog { get; set; }
 
     [RelayCommand]
@@ -145,6 +148,50 @@ public partial class MainWindowViewModel : ObservableObject
             Opcodes.Clear();
             _openedFile.CurrentChunk.OpCodes.Select(o => o.Kind).ToList().ForEach(o => Opcodes.Add(o.ToString()));
             DebugOutput = _openedFile.CurrentChunk.CurrentOpcode.ToString();
+
+#pragma warning disable CA1416
+            GetFirstFramePaletteAndBitmap(out OpPalette? firstPalette, out OpBitmap? firstBitmap);
+            if (firstPalette != null && firstBitmap != null)
+            {
+#pragma warning disable CA1031 // Do not catch general exception types
+                try
+                {
+                    RLEBitmap bitmapOut = new RLEBitmap(firstBitmap.Size, firstPalette.ColorTable.ToArray());
+                    bitmapOut.DecodeRLE(firstBitmap.Origin, firstBitmap.Size, firstBitmap.Compression, firstBitmap.BitmapData.ToArray());
+
+                    System.Drawing.Bitmap bitmapTmp = new(firstBitmap.Size.Width, firstBitmap.Size.Height);
+
+                    byte[] imageBytes = bitmapOut.GetImageBytes();
+                    for(int i = 0; i < imageBytes.Length / 4; i++)
+                    {
+                        int index = i * 4;
+
+                        int x = i % firstBitmap.Size.Width;
+                        int y = firstBitmap.Size.Height - 1 - (i / firstBitmap.Size.Width);
+
+                        bitmapTmp.SetPixel(x, y, System.Drawing.Color.FromArgb(imageBytes[index + 2], imageBytes[index + 1], imageBytes[index]));
+                    }
+
+                    System.Drawing.Imaging.BitmapData bitmapdata = bitmapTmp.LockBits(new System.Drawing.Rectangle(0, 0, bitmapTmp.Width, bitmapTmp.Height), 
+                                                                                        System.Drawing.Imaging.ImageLockMode.ReadWrite, 
+                                                                                        System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+
+                    VideoViewportBitmap = new Bitmap(Avalonia.Platform.PixelFormat.Bgra8888, Avalonia.Platform.AlphaFormat.Premul,
+                                                        bitmapdata.Scan0,
+                                                        new Avalonia.PixelSize(bitmapdata.Width, bitmapdata.Height),
+                                                        new Avalonia.Vector(96, 96),
+                                                        bitmapdata.Stride);
+
+                    bitmapTmp.UnlockBits(bitmapdata);
+                    bitmapTmp.Dispose();
+                }
+                catch (Exception)
+                {
+                    // TEMP since some images are not loading properly YET
+                }
+#pragma warning restore CA1031
+            }
+#pragma warning restore CA1416
         }
     }
 
@@ -173,36 +220,45 @@ public partial class MainWindowViewModel : ObservableObject
         return pacoFile;
     }
 
+    private void GetFirstFramePaletteAndBitmap(out OpPalette? paletteOut, out OpBitmap? bitmapOut)
+    {
+        paletteOut = null;
+        bitmapOut = null;
+
+        if(_openedFile == null)
+        {
+            return;
+        }
+
+        foreach (Chunk chunk in _openedFile.ChunkData)
+        {
+            foreach (OpHeader header in chunk.OpCodes)
+            {
+                if (header is OpPalette pallet)
+                {
+                    paletteOut = pallet;
+                }
+                else if (header is OpBitmap bitmap)
+                {
+                    bitmapOut = bitmap;
+                }
+            }
+
+            if (paletteOut != null && bitmapOut != null)
+            {
+                break;
+            }
+        }
+    }
+
     [RelayCommand]
     private void Export()
     {
         if (_openedFile == null) { return; }
         if(_openedFile.ChunkData.Count <= 0) { return; }
 
-        OpPalette? firstPalette = null;
-        OpBitmap? firstBitmap = null;
-
-        foreach (Chunk chunk in _openedFile.ChunkData)
-        {
-            foreach(OpHeader header in chunk.OpCodes)
-            {
-                if(header is OpPalette pallet)
-                {
-                    firstPalette = pallet;
-                }
-                else if (header is OpBitmap bitmap)
-                {
-                    firstBitmap = bitmap;
-                }
-            }
-
-            if (firstPalette != null && firstBitmap != null)
-            {
-                break;
-            }
-        }
-
-        if(firstPalette == null || firstBitmap == null)
+        GetFirstFramePaletteAndBitmap(out OpPalette? firstPalette, out OpBitmap? firstBitmap);
+        if (firstPalette == null || firstBitmap == null)
         {
             return;
         }
@@ -232,9 +288,12 @@ public partial class MainWindowViewModel : ObservableObject
                     }
                     //try
                     //{
+                    if (bitmap.Size.Width > 0 && bitmap.Size.Height > 0) // Sometimes just a frame with no change
+                    {
                         bitmapOut.DecodeRLE(bitmap.Origin, bitmap.Size, bitmap.Compression, bitmap.BitmapData.ToArray());
-                        bitmapOut.Save($"D:\\Projects\\Bitmaps\\frame_{frameIndex}.bmp");
-                        ++frameIndex;
+                    }
+                    bitmapOut.Save($"D:\\Projects\\Bitmaps\\frame_{frameIndex}.bmp");
+                    ++frameIndex;
                     //}
                     //catch (Exception)
                     //{
@@ -291,5 +350,4 @@ public partial class MainWindowViewModel : ObservableObject
 
         //DebugOutput = BitConverter.ToString(_openedFile.CurrentChunk.CurrentOpcode).Replace("-", " ");
     }
-
 }
